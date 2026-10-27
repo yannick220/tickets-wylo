@@ -87,12 +87,20 @@ function getCommentsForTicket(id){return allComments.filter(c=>c.ticket_id===id)
 const cats=[...new Set(baseTickets.map(t=>t.cat))].sort(); const sel=document.getElementById('filterCat'); cats.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);});
 async function addVote(ticketId, type, value){
   const user=getUserName(); if(!user){alert('Renseigne ton prénom en haut');return;}
-  await supabaseClient.from('wylo_votes').delete().eq('ticket_id', ticketId).eq('user_name', user).eq('vote_type', type);
-  await supabaseClient.from('wylo_votes').insert({ticket_id:ticketId, user_name:user, vote_type:type, vote_value:value});
+  // Optimistic: update local state instantly
+  allVotes = allVotes.filter(v=>!(v.ticket_id===ticketId && v.user_name===user && v.vote_type===type));
+  allVotes.push({ticket_id:ticketId, user_name:user, vote_type:type, vote_value:value, created_at:new Date().toISOString()});
+  render();
+  const del = await supabaseClient.from('wylo_votes').delete().eq('ticket_id', ticketId).eq('user_name', user).eq('vote_type', type);
+  const ins = await supabaseClient.from('wylo_votes').insert({ticket_id:ticketId, user_name:user, vote_type:type, vote_value:value});
+  if(ins.error){console.error(ins.error); await loadData();}
 }
 async function addComment(ticketId, text){
   const user=getUserName(); if(!user){alert('Renseigne ton prénom');return;} if(!text.trim()) return;
-  await supabaseClient.from('wylo_comments').insert({ticket_id:ticketId, user_name:user, text:text.trim()});
+  const tmp={ticket_id:ticketId, user_name:user, text:text.trim(), created_at:new Date().toISOString()};
+  allComments.push(tmp); render();
+  const ins = await supabaseClient.from('wylo_comments').insert({ticket_id:ticketId, user_name:user, text:text.trim()});
+  if(ins.error){console.error(ins.error); allComments.pop(); render(); alert('Erreur: '+ins.error.message);} else { await loadData(); }
 }
 async function addCustomTicket(title, cat, expl, diff, statut){
   const user=getUserName();
